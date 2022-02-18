@@ -60,9 +60,28 @@ in vec3 position;
 in vec3 color;
 varying vec3 vert_color;
 uniform mat3 proj;
+//*
+uniform mat2 rmobius;
+uniform mat2 imobius;
+
+vec2 cinv(vec2 z) {
+    return vec2(z.x, -z.y)/dot(z, z);
+}
+
+vec2 cmul(vec2 a, vec2 z) {
+    return vec2(a.x*z.x - a.y*z.y, a.x*z.y + a.y*z.x);
+}
+//*/
 void main()
 {
-   gl_Position = vec4( proj*position, 1.0);
+   //*
+   vec2 rtransformed = rmobius*vec2(position.x, 1) - imobius*vec2(position.y, 0);
+   vec2 itransformed = rmobius*vec2(position.y, 0) + imobius*vec2(position.x, 1);
+   vec2 inv2 = cinv(vec2(rtransformed.y, itransformed.y));
+   vec2 transformed = cmul(inv2, vec2(rtransformed.x, itransformed.y));
+   //*/
+   gl_Position = vec4(transformed, 1, 1);
+   //gl_Position = vec4(proj*position, 1);
    vert_color = color;
 }
 """
@@ -99,14 +118,47 @@ with open('/home/medusa/Projects/billeh_tinkering/neuron_types.pkl', 'rb') as f:
 with open('/home/medusa/Projects/billeh_tinkering/network_dat_original.pkl', 'rb') as f:
     nodes = pkl.load(f)['nodes']
     for typename, node in tqdm(zip(neuron_types, nodes)):
-        if typename.startswith('e'):
+        if typename.startswith('e') and '1' in typename:
             for id in node['ids']:
                 ix = np.where(perm == id)[0]
                 colors[ix] = np.array([1, 0, 0])
-        else:
+        elif typename.startswith('e') and '23' in typename:
+            for id in node['ids']:
+                ix = np.where(perm == id)[0]
+                colors[ix] = np.array([1, 0.25, 0])
+        elif typename.startswith('e') and '4' in typename:
+            for id in node['ids']:
+                ix = np.where(perm == id)[0]
+                colors[ix] = np.array([1, 0.5, 0])
+        elif typename.startswith('e') and '5' in typename:
+            for id in node['ids']:
+                ix = np.where(perm == id)[0]
+                colors[ix] = np.array([1, 0.75, 0])
+        elif typename.startswith('e') and '6' in typename:
+            for id in node['ids']:
+                ix = np.where(perm == id)[0]
+                colors[ix] = np.array([1, 1, 0])
+
+        elif typename.startswith('i') and '1' in typename:
             for id in node['ids']:
                 ix = np.where(perm == id)[0]
                 colors[ix] = np.array([0, 0, 1])
+        elif typename.startswith('i') and '23' in typename:
+            for id in node['ids']:
+                ix = np.where(perm == id)[0]
+                colors[ix] = np.array([0, 0.25, 1])
+        elif typename.startswith('i') and '4' in typename:
+            for id in node['ids']:
+                ix = np.where(perm == id)[0]
+                colors[ix] = np.array([0, 0.5, 1])
+        elif typename.startswith('i') and '5' in typename:
+            for id in node['ids']:
+                ix = np.where(perm == id)[0]
+                colors[ix] = np.array([0, 0.75, 1])
+        elif typename.startswith('i') and '6' in typename:
+            for id in node['ids']:
+                ix = np.where(perm == id)[0]
+                colors[ix] = np.array([0, 1, 1])
 
 
 def create_object(shader):
@@ -165,6 +217,23 @@ def rot(a, b, c):
     return np.dot(np.dot(am, bm), cm)
 
 
+def mobius_from_mouse(pos):
+
+    shifted = np.array([pos.x - 960, pos.y - 540]).astype(np.float64)
+    snorm = np.linalg.norm(shifted)
+    if snorm > 540:
+        shifted /= snorm
+    else:
+        shifted /= 540
+    cpos = shifted[0] + shifted[1]*1j
+
+    r1 = np.array([1, -cpos], dtype=np.complex64)
+    r2 = np.array([cpos, 1], dtype=np.complex64)
+    transformation = np.stack([r1, r2], axis=0)
+
+    return transformation.real.astype(np.float32), transformation.imag.astype(np.float32)
+
+
 class ShaderFrame(pyopengltk.OpenGLFrame):
 
     def initgl(self):
@@ -179,21 +248,31 @@ class ShaderFrame(pyopengltk.OpenGLFrame):
             )
             self.vertex_array_object = create_object(self.shader)
             self.proj = GL.glGetUniformLocation(self.shader, bytestr('proj'))
+            self.rmobius = GL.glGetUniformLocation(self.shader, bytestr('rmobius'))
+            self.imobius = GL.glGetUniformLocation(self.shader, bytestr('imobius'))
         self.nframes = 0
         self.start = time.time()
 
     def redraw(self):
+
         GL.glClear(GL.GL_COLOR_BUFFER_BIT | GL.GL_DEPTH_BUFFER_BIT)
         GL.glUseProgram(self.shader)
         t = time.time()-self.start
+
         p = np.stack([np.array([1, 0, 0]), np.array(
             [0, 1, 0]), np.array([0, 0, 1])])
         GL.glUniformMatrix3fv(self.proj, 1, GL.GL_FALSE, p)
+
+        new_rmobius, new_imobius = mobius_from_mouse(pyautogui.position())
+        GL.glUniformMatrix2fv(self.rmobius, 1, GL.GL_FALSE, new_rmobius)
+        GL.glUniformMatrix2fv(self.imobius, 1, GL.GL_FALSE, new_imobius)
+
         GL.glBindVertexArray(self.vertex_array_object)
         GL.glDrawArrays(GL.GL_POINTS, 0, NPTS)
         GL.glBindVertexArray(0)
         GL.glUseProgram(0)
         GL.glRasterPos2f(0, 0)
+
         if self.nframes > 1:
             t = time.time()-self.start
             fps = "fps: %5.2f frames: %d" % (self.nframes / t, self.nframes)
