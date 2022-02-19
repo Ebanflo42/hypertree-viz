@@ -55,110 +55,15 @@ def compileShader(source, shaderType):
     return shader
 
 
-vertex_shader = """#version 130
-in vec3 position;
-in vec3 color;
-varying vec3 vert_color;
-uniform mat3 proj;
-//*
-uniform mat2 rmobius;
-uniform mat2 imobius;
+with open('hypertree_viz/vert.glsl', 'r') as f:
+    vertex_shader = f.read()
 
-vec2 cinv(vec2 z) {
-    return vec2(z.x, -z.y)/dot(z, z);
-}
+with open('hypertree_viz/frag.glsl', 'r') as f:
+    fragment_shader = f.read()
 
-vec2 cmul(vec2 a, vec2 z) {
-    return vec2(a.x*z.x - a.y*z.y, a.x*z.y + a.y*z.x);
-}
-//*/
-void main()
-{
-   //*
-   vec2 rtransformed = rmobius*vec2(position.x, 1) - imobius*vec2(position.y, 0);
-   vec2 itransformed = rmobius*vec2(position.y, 0) + imobius*vec2(position.x, 1);
-   vec2 inv2 = cinv(vec2(rtransformed.y, itransformed.y));
-   vec2 transformed = cmul(inv2, vec2(rtransformed.x, itransformed.y));
-   //*/
-   gl_Position = vec4(transformed, 1, 1);
-   //gl_Position = vec4(proj*position, 1);
-   vert_color = color;
-}
-"""
-
-fragment_shader = """#version 130
-varying vec3 vert_color;
-void main()
-{
-   gl_FragColor = vec4(vert_color, 1);
-}
-"""
-NPTS = 100000
-
-#vertices = (np.random.random(NPTS * 3).astype(np.float32)-.5) * 1.5
-#vertices.shape = NPTS, 3
-
-print('Loading vertices . . .')
-with open('/home/medusa/Projects/hyperbolic-embedder/billeh-coordinates.txt', 'r') as f:
-    lines = f.readlines()
-    NPTS = len(lines) - 2
-    vertices = np.zeros((NPTS, 3), dtype=np.float32)
-    perm = np.zeros(NPTS, dtype=np.int32)
-    for i, line in tqdm(enumerate(lines[2:])):
-        coordstrings = line.split()
-        perm[i] = int(coordstrings[0])
-        r, phi = float(coordstrings[1]) / \
-            13.91, np.pi*float(coordstrings[2])/180
-        vertices[i] = np.array([(5/9)*r*np.cos(phi), r*np.sin(phi), 1])
-
-colors = np.zeros((NPTS, 3), dtype=np.float32)
-print('Finding neuron types . . .')
-with open('/home/medusa/Projects/billeh_tinkering/neuron_types.pkl', 'rb') as f:
-    neuron_types = pkl.load(f)['neuron_type_names']
-with open('/home/medusa/Projects/billeh_tinkering/network_dat_original.pkl', 'rb') as f:
-    nodes = pkl.load(f)['nodes']
-    for typename, node in tqdm(zip(neuron_types, nodes)):
-        if typename.startswith('e') and '1' in typename:
-            for id in node['ids']:
-                ix = np.where(perm == id)[0]
-                colors[ix] = np.array([1, 0, 0])
-        elif typename.startswith('e') and '23' in typename:
-            for id in node['ids']:
-                ix = np.where(perm == id)[0]
-                colors[ix] = np.array([1, 0.25, 0])
-        elif typename.startswith('e') and '4' in typename:
-            for id in node['ids']:
-                ix = np.where(perm == id)[0]
-                colors[ix] = np.array([1, 0.5, 0])
-        elif typename.startswith('e') and '5' in typename:
-            for id in node['ids']:
-                ix = np.where(perm == id)[0]
-                colors[ix] = np.array([1, 0.75, 0])
-        elif typename.startswith('e') and '6' in typename:
-            for id in node['ids']:
-                ix = np.where(perm == id)[0]
-                colors[ix] = np.array([1, 1, 0])
-
-        elif typename.startswith('i') and '1' in typename:
-            for id in node['ids']:
-                ix = np.where(perm == id)[0]
-                colors[ix] = np.array([0, 0, 1])
-        elif typename.startswith('i') and '23' in typename:
-            for id in node['ids']:
-                ix = np.where(perm == id)[0]
-                colors[ix] = np.array([0, 0.25, 1])
-        elif typename.startswith('i') and '4' in typename:
-            for id in node['ids']:
-                ix = np.where(perm == id)[0]
-                colors[ix] = np.array([0, 0.5, 1])
-        elif typename.startswith('i') and '5' in typename:
-            for id in node['ids']:
-                ix = np.where(perm == id)[0]
-                colors[ix] = np.array([0, 0.75, 1])
-        elif typename.startswith('i') and '6' in typename:
-            for id in node['ids']:
-                ix = np.where(perm == id)[0]
-                colors[ix] = np.array([0, 1, 1])
+vertices = np.load('vertices.npy')
+colors = np.load('colors.npy')
+NPTS = len(vertices)
 
 
 def create_object(shader):
@@ -189,7 +94,8 @@ def create_object(shader):
 
     color = GL.glGetAttribLocation(shader, bytestr('color'))
     GL.glEnableVertexAttribArray(color)
-    GL.glVertexAttribPointer(color, 3, GL.GL_FLOAT, False, 0, ctypes.c_void_p(0))
+    GL.glVertexAttribPointer(color, 3, GL.GL_FLOAT,
+                             False, 0, ctypes.c_void_p(0))
     cs = colors.tobytes()
     GL.glBufferData(GL.GL_ARRAY_BUFFER, len(cs), cs, GL.GL_STATIC_DRAW)
 
@@ -219,19 +125,18 @@ def rot(a, b, c):
 
 def mobius_from_mouse(pos):
 
-    shifted = np.array([pos.x - 960, pos.y - 540]).astype(np.float64)
+    shifted = np.array([pos.x - 960, pos.y - 540]).astype(np.float32)
+    shifted /= 540
     snorm = np.linalg.norm(shifted)
-    if snorm > 540:
-        shifted /= snorm
-    else:
-        shifted /= 540
-    cpos = shifted[0] + shifted[1]*1j
+    if snorm > 0.95:
+        shifted *= 0.95/snorm
 
-    r1 = np.array([1, -cpos], dtype=np.complex64)
-    r2 = np.array([cpos, 1], dtype=np.complex64)
-    transformation = np.stack([r1, r2], axis=0)
+    a = np.array([1, 0], dtype=np.float32)
+    b = np.array([shifted[0], -shifted[1]]).astype(np.float32)
+    c = shifted
+    d = np.array([1, 0], dtype=np.float32)
 
-    return transformation.real.astype(np.float32), transformation.imag.astype(np.float32)
+    return a, b, c, d
 
 
 class ShaderFrame(pyopengltk.OpenGLFrame):
@@ -248,8 +153,12 @@ class ShaderFrame(pyopengltk.OpenGLFrame):
             )
             self.vertex_array_object = create_object(self.shader)
             self.proj = GL.glGetUniformLocation(self.shader, bytestr('proj'))
-            self.rmobius = GL.glGetUniformLocation(self.shader, bytestr('rmobius'))
-            self.imobius = GL.glGetUniformLocation(self.shader, bytestr('imobius'))
+
+            self.a = GL.glGetUniformLocation(self.shader, bytestr('a'))
+            self.b = GL.glGetUniformLocation(self.shader, bytestr('b'))
+            self.c = GL.glGetUniformLocation(self.shader, bytestr('c'))
+            self.d = GL.glGetUniformLocation(self.shader, bytestr('d'))
+
         self.nframes = 0
         self.start = time.time()
 
@@ -263,9 +172,13 @@ class ShaderFrame(pyopengltk.OpenGLFrame):
             [0, 1, 0]), np.array([0, 0, 1])])
         GL.glUniformMatrix3fv(self.proj, 1, GL.GL_FALSE, p)
 
-        new_rmobius, new_imobius = mobius_from_mouse(pyautogui.position())
-        GL.glUniformMatrix2fv(self.rmobius, 1, GL.GL_FALSE, new_rmobius)
-        GL.glUniformMatrix2fv(self.imobius, 1, GL.GL_FALSE, new_imobius)
+        a, b, c, d = mobius_from_mouse(pyautogui.position())
+        #a, c = np.array([1, 0]), np.array([1, 0])
+        #b, d = np.zeros_like(a), np.zeros_like(c)
+        GL.glUniform2f(self.a, a[0], a[1])
+        GL.glUniform2f(self.b, b[0], b[1])
+        GL.glUniform2f(self.c, c[0], c[1])
+        GL.glUniform2f(self.d, d[0], d[1])
 
         GL.glBindVertexArray(self.vertex_array_object)
         GL.glDrawArrays(GL.GL_POINTS, 0, NPTS)
